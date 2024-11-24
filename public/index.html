@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC & Chat Test</title>
+</head>
+<body>
+  <h1>WebRTC & Chat Test</h1>
+
+  <!-- Chat Section -->
+  <h2>Chat</h2>
+  <div>
+    <input id="chatInput" type="text" placeholder="Type your message">
+    <button id="sendChat">Send</button>
+  </div>
+  <div id="chatMessages" style="border: 1px solid #ccc; padding: 10px; margin-top: 10px; height: 150px; overflow-y: auto;"></div>
+
+  <!-- WebRTC Video Section -->
+  <h2>WebRTC Video</h2>
+  <video id="localVideo" autoplay playsinline muted style="width: 300px; border: 1px solid #ccc;"></video>
+  <video id="remoteVideo" autoplay playsinline style="width: 300px; border: 1px solid #ccc;"></video>
+
+  <!-- Call Controls -->
+  <div id="call-controls">
+    <button id="startCall">Start Call</button>
+    <button id="acceptCall" style="display: none;">Accept Call</button>
+    <button id="rejectCall" style="display: none;">Reject Call</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/simple-peer/simplepeer.min.js"></script>
+  <script>
+    const chatInput = document.getElementById("chatInput");
+    const sendChatBtn = document.getElementById("sendChat");
+    const chatMessages = document.getElementById("chatMessages");
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+    const startCallBtn = document.getElementById("startCall");
+    const acceptCallBtn = document.getElementById("acceptCall");
+    const rejectCallBtn = document.getElementById("rejectCall");
+
+    // WebSocket Setup
+    const socket = new WebSocket(`ws://${window.location.host}`);
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      switch (data.type) {
+        case "chat-message":
+          // แสดงข้อความแชท
+          const messageDiv = document.createElement("div");
+          messageDiv.textContent = data.message;
+          chatMessages.appendChild(messageDiv);
+          break;
+
+        case "incoming-call":
+          // แสดงปุ่ม Accept และ Reject Call
+          acceptCallBtn.style.display = "inline-block";
+          rejectCallBtn.style.display = "inline-block";
+
+          // เมื่อกด Accept Call
+          acceptCallBtn.onclick = () => {
+            peer = new SimplePeer({ initiator: false, trickle: false });
+            peer.signal(data.offer);
+
+            peer.on("signal", (answer) => {
+              socket.send(JSON.stringify({ type: "call-answer", answer }));
+            });
+
+            peer.on("stream", (stream) => {
+              remoteVideo.srcObject = stream;
+            });
+
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
+              localVideo.srcObject = stream;
+              peer.addStream(stream);
+            });
+
+            acceptCallBtn.style.display = "none";
+            rejectCallBtn.style.display = "none";
+          };
+
+          // เมื่อกด Reject Call
+          rejectCallBtn.onclick = () => {
+            socket.send(JSON.stringify({ type: "call-rejected" }));
+            acceptCallBtn.style.display = "none";
+            rejectCallBtn.style.display = "none";
+          };
+          break;
+
+        case "call-answered":
+          peer.signal(data.answer);
+          break;
+
+        case "call-rejected":
+          alert("The user rejected your call.");
+          break;
+
+        default:
+          console.log("Unknown message type:", data.type);
+      }
+    };
+
+    // Chat Message
+    sendChatBtn.onclick = () => {
+      const message = chatInput.value;
+      if (message.trim() !== "") {
+        socket.send(JSON.stringify({ type: "chat-message", message }));
+        chatInput.value = "";
+      }
+    };
+
+    // WebRTC Call
+    let peer;
+
+    startCallBtn.onclick = () => {
+      peer = new SimplePeer({ initiator: true, trickle: false });
+
+      peer.on("signal", (offer) => {
+        socket.send(JSON.stringify({ type: "call-offer", offer }));
+      });
+
+      peer.on("stream", (stream) => {
+        remoteVideo.srcObject = stream;
+      });
+
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
+        localVideo.srcObject = stream;
+        peer.addStream(stream);
+      });
+    };
+  </script>
+</body>
+</html>
